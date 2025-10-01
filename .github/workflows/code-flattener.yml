@@ -51,9 +51,9 @@ jobs:
               return a + b  # another comment
           PY
           cat > sample/src/app.js <<'JS'
-// line comment
-function greet(name) { /* block comment */ return `Hi ${name}`; }
-JS
+          // line comment
+          function greet(name) { /* block comment */ return `Hi ${name}`; }
+          JS
           cat > sample/src/page.html <<'HTML'
           <!-- html comment -->
           <html><body><h1>Title</h1></body></html>
