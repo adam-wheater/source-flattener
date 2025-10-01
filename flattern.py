@@ -141,6 +141,89 @@ def strip_c_like_comments(text: str) -> str:
     return "".join(out)
 
 
+def strip_sql_comments(text: str) -> str:
+    # Handle -- line comments and /* ... */ blocks, keep quoted strings intact.
+    out = []
+    i, n = 0, len(text)
+    in_block = False
+    in_str = False
+    quote = ""
+    escape = False
+    while i < n:
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < n else ""
+
+        if in_block:
+            if ch == "*" and nxt == "/":
+                in_block = False
+                i += 2
+            else:
+                i += 1
+            continue
+
+        if in_str:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == quote:
+                in_str = False
+            i += 1
+            continue
+
+        # not in string or block comment
+        if ch in ("'", '"'):
+            in_str = True
+            quote = ch
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "/" and nxt == "*":
+            in_block = True
+            i += 2
+            continue
+        if ch == "-" and nxt == "-":
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def strip_hash_line_comments(text: str) -> str:
+    # For languages where # starts a comment to end of line, outside strings.
+    out_lines = []
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        buf = []
+        i, in_str, quote, escape = 0, False, "", False
+        while i < len(line):
+            ch = line[i]
+            if in_str:
+                buf.append(ch)
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == quote:
+                    in_str = False
+                i += 1
+                continue
+            if ch in ("'", '"'):
+                in_str, quote = True, ch
+                buf.append(ch)
+                i += 1
+                continue
+            if ch == "#":
+                break
+            buf.append(ch)
+            i += 1
+        out_lines.append("".join(buf))
+    return "\n".join(out_lines)
+
+
 def strip_python_comments(text: str, strip_docstrings: bool) -> str:
     s = text.replace("\r\n", "\n").replace("\r", "\n")
     out_lines: List[str] = []
@@ -189,12 +272,19 @@ def process_content(text: str, ext: str, strip_comments: bool, strip_py_docstrin
     if not strip_comments:
         return text
     e = ext.lower()
-    if e in {".js", ".ts", ".tsx", ".jsx", ".java", ".c", ".cpp", ".h", ".hpp", ".cs", ".css", ".php", ".rs", ".go", ".sql"}:
-        return strip_c_like_comments(text)
-    if e in {".html", ".htm", ".md"}:
-        return strip_html_comments(text)
     if e == ".py":
         return strip_python_comments(text, strip_docstrings=strip_py_docstrings)
+    if e in {".html", ".htm", ".md"}:
+        return strip_html_comments(text)
+    if e == ".sql":
+        return strip_sql_comments(text)
+    if e in {".sh", ".bash", ".zsh", ".ps1"}:
+        return strip_hash_line_comments(text)
+    if e in {".js", ".ts", ".tsx", ".jsx", ".java", ".c", ".cpp", ".h", ".hpp", ".cs", ".css", ".php", ".rs", ".go"}:
+        s = strip_c_like_comments(text)
+        if e == ".php":
+            s = strip_hash_line_comments(s)
+        return s
     return text
 
 
@@ -246,7 +336,7 @@ def main() -> None:
             raw = p.read_text(encoding="utf-8", errors="ignore")
         except Exception:
             continue
-        processed = process_content(raw, p.suffix, args.strip_comments, args.strip_py_docstrings)
+        processed = process_content(raw, p.suffix, args.strip_comments, args.strip_p y_docstrings)  # noqa: E501
         normalised = normalise_whitespace(processed, args.tab_spaces, args.collapse_blank_to)
         if not normalised:
             continue
