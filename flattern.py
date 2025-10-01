@@ -336,7 +336,7 @@ def main() -> None:
             raw = p.read_text(encoding="utf-8", errors="ignore")
         except Exception:
             continue
-        processed = process_content(raw, p.suffix, args.strip_comments, args.strip_p y_docstrings)  # noqa: E501
+        processed = process_content(raw, p.suffix, args.strip_comments, args.strip_py_docstrings)  # noqa: E501
         normalised = normalise_whitespace(processed, args.tab_spaces, args.collapse_blank_to)
         if not normalised:
             continue
