@@ -26,7 +26,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
 
       - name: Install tooling
         run: |
@@ -43,7 +42,9 @@ jobs:
           python flatten.py --help
 
       - name: Create sample workspace
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p sample/src pkg/.git sample/node_modules junk/build
           cat > sample/src/hello.py <<'PY'
           """Docstring to be stripped"""
@@ -67,7 +68,9 @@ jobs:
           touch junk/build/ignore.bin
 
       - name: Run flattener on sample
+        shell: bash
         run: |
+          set -euo pipefail
           python flatten.py \
             --root sample \
             --exts .py,.js,.html,.sql \
@@ -76,19 +79,24 @@ jobs:
             --chunk-chars 500 \
             --out-dir out \
             --prefix ci_test
+          echo "Produced files:"
+          ls -l out || true
+          echo "Preview first file:"
+          f=$(ls out/ci_test*.txt | head -n1 || true)
+          if [ -n "${f:-}" ]; then head -n 40 "$f"; fi
 
       - name: Verify outputs exist and have content
+        shell: bash
         run: |
+          set -euo pipefail
           test -d out
           ls -l out
-          # at least one txt file must exist
           shopt -s nullglob
           files=(out/ci_test*.txt)
           if [ ${#files[@]} -eq 0 ]; then
             echo "No output files produced."
             exit 1
           fi
-          # ensure the flattener wrote separator headers
           if ! grep -q "===== FILE:" "${files[0]}"; then
             echo "Separator header not found in output."
             exit 1
@@ -100,11 +108,13 @@ jobs:
         with:
           name: flattener-output-py${{ matrix.python-version }}
           path: out/*.txt
+          if-no-files-found: warn
 
   repo-smoke:
     name: Run on repository root
     runs-on: ubuntu-latest
     needs: lint-test
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -113,21 +123,24 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
 
       - name: Run flattener against repo, no comment stripping
+        shell: bash
         run: |
+          set -euo pipefail
           python flatten.py \
             --root . \
             --exts .py \
             --chunk-chars 8000 \
             --out-dir out_repo \
             --prefix repo_flat
+          ls -l out_repo || true
 
       - name: Verify repo outputs
+        shell: bash
         run: |
+          set -euo pipefail
           test -d out_repo
-          ls -l out_repo
           shopt -s nullglob
           files=(out_repo/repo_flat*.txt)
           if [ ${#files[@]} -eq 0 ]; then
@@ -141,3 +154,4 @@ jobs:
         with:
           name: repo-output
           path: out_repo/*.txt
+          if-no-files-found: warn
