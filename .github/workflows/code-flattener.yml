@@ -1,0 +1,143 @@
+name: Code Flattener CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+
+      - name: Lint
+        run: |
+          flake8 flatten.py --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 flatten.py --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Sanity check, script help
+        run: |
+          python flatten.py --help
+
+      - name: Create sample workspace
+        run: |
+          mkdir -p sample/src pkg/.git sample/node_modules junk/build
+          cat > sample/src/hello.py <<'PY'
+          """Docstring to be stripped"""
+          def add(a, b):  # inline comment
+              return a + b  # another comment
+          PY
+          cat > sample/src/app.js <<'JS'
+// line comment
+function greet(name) { /* block comment */ return `Hi ${name}`; }
+JS
+          cat > sample/src/page.html <<'HTML'
+          <!-- html comment -->
+          <html><body><h1>Title</h1></body></html>
+          HTML
+          cat > sample/src/query.sql <<'SQL'
+          -- a comment
+          select 1 /* block */ as x;
+          SQL
+          # noise we expect to exclude by default filters
+          touch sample/node_modules/ignore.js
+          touch junk/build/ignore.bin
+
+      - name: Run flattener on sample
+        run: |
+          python flatten.py \
+            --root sample \
+            --exts .py,.js,.html,.sql \
+            --strip-comments --strip-py-docstrings \
+            --tab-spaces 2 --collapse-blank-to 1 \
+            --chunk-chars 500 \
+            --out-dir out \
+            --prefix ci_test
+
+      - name: Verify outputs exist and have content
+        run: |
+          test -d out
+          ls -l out
+          # at least one txt file must exist
+          shopt -s nullglob
+          files=(out/ci_test*.txt)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No output files produced."
+            exit 1
+          fi
+          # ensure the flattener wrote separator headers
+          if ! grep -q "===== FILE:" "${files[0]}"; then
+            echo "Separator header not found in output."
+            exit 1
+          fi
+
+      - name: Upload outputs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flattener-output-py${{ matrix.python-version }}
+          path: out/*.txt
+
+  repo-smoke:
+    name: Run on repository root
+    runs-on: ubuntu-latest
+    needs: lint-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Run flattener against repo, no comment stripping
+        run: |
+          python flatten.py \
+            --root . \
+            --exts .py \
+            --chunk-chars 8000 \
+            --out-dir out_repo \
+            --prefix repo_flat
+
+      - name: Verify repo outputs
+        run: |
+          test -d out_repo
+          ls -l out_repo
+          shopt -s nullglob
+          files=(out_repo/repo_flat*.txt)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No repo output files produced."
+            exit 1
+          fi
+
+      - name: Upload repo outputs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repo-output
+          path: out_repo/*.txt
