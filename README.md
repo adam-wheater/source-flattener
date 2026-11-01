@@ -197,3 +197,7 @@ python flatten.py --root . --exts .py,.cs,.js,.jsx,.ts,.tsx,.java,.go,.rs,.php,.
 ## Summary
 
 **Code Flattener** is a simple, flexible way to export large, multi-language codebases into a clean text format for analysis or sharing.
+
+## License
+
+[MIT](LICENSE) © Adam Wheater
